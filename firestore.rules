@@ -1,0 +1,79 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: rooms
+// Document ID: auto-generated
+// Fields:
+//   - code: string (required) - 6-digit code
+//   - creatorId: string (required) - UID of creator
+//   - revealed: boolean (required) - visibility of votes
+//   - votingType: string (required) - 'fibonacci' or 'free'
+//   - createdAt: timestamp (required)
+//   - expiresAt: timestamp (required)
+//
+// Collection: rooms/{roomId}/votes
+// Document ID: userId
+// Fields:
+//   - userId: string (required)
+//   - userName: string (required)
+//   - vote: string (required)
+//   - votedAt: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isOwner(userId) {
+      return userId != null && userId != "";
+    }
+
+    function isRoomCreator(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId != null;
+    }
+
+    function isValidRoom(data) {
+      return data.code is string && data.code.size() == 6 &&
+             data.creatorId is string &&
+             data.revealed is bool &&
+             data.votingType in ['fibonacci', 'free'] &&
+             (data.createdAt == null || data.createdAt is timestamp) &&
+             data.expiresAt is timestamp;
+    }
+
+    function isValidVote(data) {
+      return data.userId is string && data.userId.size() > 0 &&
+             data.userName is string && data.userName.size() > 0 && data.userName.size() < 50 &&
+             data.vote is string && data.vote.size() < 20 &&
+             (data.votedAt == null || data.votedAt is timestamp);
+    }
+
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create: if isValidRoom(request.resource.data);
+      allow update: if (
+        // Anyone can reveal if they are the creator (checked in app logic, rules allow for simplicity in no-auth)
+        request.resource.data.creatorId == resource.data.creatorId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revealed'])
+      );
+      allow delete: if true; // Simplified for no-auth demo
+
+      match /votes/{userId} {
+        allow read: if true;
+        allow create, update: if isValidVote(request.resource.data) && userId == request.resource.data.userId;
+        allow delete: if true;
+      }
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "A planning poker room",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Unique 6-digit room code" },
+        "creatorId": { "type": "string", "description": "UID of the room creator" },
+        "revealed": { "type": "boolean", "description": "Whether votes are revealed" },
+        "votingType": { "type": "string", "enum": ["fibonacci", "free"], "description": "Type of voting" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation time" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Expiration time (30 mins)" }
+      },
+      "required": ["code", "creatorId", "revealed", "votingType", "createdAt", "expiresAt"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A user's vote in a room",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the voter" },
+        "userName": { "type": "string", "description": "Name of the voter" },
+        "vote": { "type": "string", "description": "The vote value" },
+        "votedAt": { "type": "string", "format": "date-time", "description": "Time of vote" }
+      },
+      "required": ["userId", "userName", "vote", "votedAt"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Planning poker rooms"
+    },
+    "/rooms/{roomId}/votes/{voteId}": {
+      "schema": "Vote",
+      "description": "Votes within a room"
+    }
+  }
+}

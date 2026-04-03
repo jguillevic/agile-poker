@@ -1,0 +1,5 @@
+{
+  "name": "Fibonacci Agile Poker",
+  "description": "Une application de chiffrage Fibonacci pour les pesées Agile en temps réel.",
+  "requestFramePermissions": []
+}
