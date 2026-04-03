@@ -81,23 +81,25 @@ const FIBONACCI_VALUES = ['0', '1', '2', '3', '5', '8', '13', '21', '34', '55', 
 
 // Local ID management
 const getLocalUserId = () => {
-  let id = localStorage.getItem('poker_uid');
+  let id = sessionStorage.getItem('poker_uid');
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem('poker_uid', id);
+    sessionStorage.setItem('poker_uid', id);
   }
   return id;
 };
 
 export default function App() {
   const [userId] = useState(getLocalUserId());
-  const [userName, setUserName] = useState<string>(localStorage.getItem('poker_user_name') || '');
+  const [userName, setUserName] = useState<string>(sessionStorage.getItem('poker_user_name') || localStorage.getItem('poker_user_name') || '');
   const [view, setView] = useState<'home' | 'create' | 'room'>('home');
   const [roomCode, setRoomCode] = useState('');
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [freeVoteValue, setFreeVoteValue] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Mandatory Error Handler (Simplified for no-auth)
   const handleFirestoreError = (error: any, operationType: OperationType, path: string | null) => {
@@ -114,6 +116,12 @@ export default function App() {
 
   // Initialization
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('room');
+    if (code) {
+      setRoomCode(code);
+    }
+
     const testConnection = async () => {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
@@ -191,6 +199,7 @@ export default function App() {
       setCurrentRoom({ ...roomData, id: docRef.id, createdAt: Timestamp.fromDate(now) } as Room);
       setView('room');
       localStorage.setItem('poker_user_name', trimmedName);
+      sessionStorage.setItem('poker_user_name', trimmedName);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'rooms');
     } finally {
@@ -226,6 +235,7 @@ export default function App() {
       setCurrentRoom({ ...roomData, id: roomDoc.id });
       setView('room');
       localStorage.setItem('poker_user_name', trimmedName);
+      sessionStorage.setItem('poker_user_name', trimmedName);
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, 'rooms');
     } finally {
@@ -235,6 +245,20 @@ export default function App() {
 
   const handleVote = async (value: string) => {
     if (!currentRoom) return;
+    
+    // Prevent negative values for free mode
+    if (currentRoom.votingType === 'free' && value !== 'PASS') {
+      if (value.startsWith('-')) {
+        setError("Les valeurs négatives ne sont pas autorisées.");
+        return;
+      }
+      const num = parseFloat(value);
+      if (!isNaN(num) && num < 0) {
+        setError("Les valeurs négatives ne sont pas autorisées.");
+        return;
+      }
+    }
+
     const path = `rooms/${currentRoom.id}/votes/${userId}`;
     try {
       await setDoc(doc(db, 'rooms', currentRoom.id, 'votes', userId), {
@@ -243,6 +267,9 @@ export default function App() {
         vote: value,
         votedAt: serverTimestamp()
       });
+      if (currentRoom.votingType === 'free') {
+        setFreeVoteValue('');
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -277,9 +304,11 @@ export default function App() {
 
   const handleShare = () => {
     if (!currentRoom) return;
-    const text = `Rejoins ma session de Planning Poker ! Code : ${currentRoom.code}\nLien : ${window.location.href}`;
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', currentRoom.code);
+    const text = `Rejoins ma session de Planning Poker !\nCode : ${currentRoom.code}\nLien : ${url.toString()}`;
     navigator.clipboard.writeText(text);
-    alert("Copié dans le presse-papier ! Partage-le sur Teams.");
+    setShowShareModal(true);
   };
 
   const myVote = useMemo(() => votes.find(v => v.userId === userId), [votes, userId]);
@@ -301,9 +330,6 @@ export default function App() {
               <Users className="text-white w-5 h-5" />
             </div>
             <h1 className="text-xl font-bold tracking-tight text-indigo-900">Agile Poker</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Session info removed */}
           </div>
         </div>
       </header>
@@ -437,8 +463,6 @@ export default function App() {
                 <h2 className="text-3xl font-bold text-slate-900">Paramètres du salon</h2>
                 
                 <div className="space-y-6">
-                  {/* Name confirmation removed */}
-
                   <div className="space-y-4">
                     <p className="font-semibold text-slate-700">Type de chiffrage</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -576,19 +600,27 @@ export default function App() {
                         <div className="flex gap-4">
                           <input 
                             type="number" 
+                            min="0"
+                            value={freeVoteValue}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (!val.startsWith('-')) {
+                                setFreeVoteValue(val);
+                              }
+                            }}
                             placeholder="Entrez votre valeur..."
                             className="flex-1 px-6 py-4 rounded-2xl border-2 border-slate-100 focus:border-indigo-500 outline-none text-xl font-bold"
                             onKeyDown={(e) => {
+                              if (e.key === '-' || e.key === 'e') {
+                                e.preventDefault();
+                              }
                               if (e.key === 'Enter') {
-                                handleVote((e.target as HTMLInputElement).value);
+                                handleVote(freeVoteValue);
                               }
                             }}
                           />
                           <button 
-                            onClick={(e) => {
-                              const input = (e.currentTarget.previousSibling as HTMLInputElement);
-                              handleVote(input.value);
-                            }}
+                            onClick={() => handleVote(freeVoteValue)}
                             className="bg-indigo-600 text-white px-8 rounded-2xl font-bold hover:bg-indigo-700 transition-all"
                           >
                             Voter
@@ -629,9 +661,14 @@ export default function App() {
                           <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
                             {v.userName[0].toUpperCase()}
                           </div>
-                          {v.userId === userId && (
-                            <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded">Moi</span>
-                          )}
+                          <div className="flex flex-col items-end gap-1">
+                            {v.userId === userId && (
+                              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded">Moi</span>
+                            )}
+                            {v.userId === currentRoom.creatorId && (
+                              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-50 px-2 py-0.5 rounded">Créateur</span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="text-4xl font-black text-indigo-900">
@@ -751,6 +788,41 @@ export default function App() {
       <footer className="max-w-5xl mx-auto p-6 text-center text-slate-400 text-sm">
         <p>© 2026 Agile Poker • Fibonacci & Planning Poker</p>
       </footer>
+
+      {/* Share Modal */}
+      <AnimatePresence>
+        {showShareModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowShareModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center space-y-6"
+            >
+              <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold text-slate-900">Lien copié !</h3>
+                <p className="text-slate-500">Le lien d'invitation a été copié dans votre presse-papier. Vous pouvez maintenant le partager avec votre équipe.</p>
+              </div>
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-100"
+              >
+                Génial !
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

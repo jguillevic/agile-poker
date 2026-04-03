@@ -48,6 +48,7 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() > 0 &&
              data.userName is string && data.userName.size() > 0 && data.userName.size() < 50 &&
              data.vote is string && data.vote.size() < 20 &&
+             (data.vote == 'PASS' || data.vote == '?' || data.vote == '☕' || !data.vote.matches('^-.*')) &&
              (data.votedAt == null || data.votedAt is timestamp);
     }
 
